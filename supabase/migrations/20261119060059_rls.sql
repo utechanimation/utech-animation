@@ -103,12 +103,58 @@ grant update (username, full_name, bio, avatar_key, year_of_study)
 -- No insert grant: the profile row is created by a trigger on sign-up (*_auth_hook.sql).
 -- No delete grant: "Delete my account" runs on the server (it also deletes files).
 
--- Anyone, signed in or not, may read public profile fields of every profile
--- (profile pages are public; private columns are hidden by the grants above).
-create policy "Profiles are readable by everyone"
+-- -----------------------------------------------------------------------------
+-- Helper: has this person published work that visitors can see?
+-- TEMPORARY RULE (a final decision comes in Phase 3/4; this replaces the brief's
+-- "profiles are public"). A profile is public only if the person:
+--   * owns a portfolio that is 'active' and 'public', or
+--   * has an ACCEPTED credit on such a portfolio.
+-- Pending, rejected, private, unlisted-only or taken-down work does not count.
+--
+-- It is security definer so it can look at portfolios and credits the caller
+-- cannot read. anon may call it because visitor policies need it, and it only
+-- answers "has this person published work?", which the public gallery already
+-- shows. It returns no other data.
+-- -----------------------------------------------------------------------------
+create or replace function public.profile_is_public(p_profile_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+           select 1 from public.portfolios p
+           where p.user_id = p_profile_id
+             and p.status = 'active' and p.visibility = 'public')
+      or exists (
+           select 1
+             from public.portfolio_credits c
+             join public.portfolios p on p.id = c.portfolio_id
+            where c.profile_id = p_profile_id
+              and c.status = 'accepted'
+              and p.status = 'active' and p.visibility = 'public');
+$$;
+
+revoke execute on function public.profile_is_public(uuid) from public;
+grant  execute on function public.profile_is_public(uuid) to anon, authenticated;
+
+-- Visitors read only the profiles of people with published work.
+create policy "Visitors read profiles with published work"
   on public.profiles for select
-  to anon, authenticated
-  using (true);
+  to anon
+  using (public.profile_is_public(id));
+
+-- Signed-in users read their own profile, profiles with published work, and
+-- (moderators) every profile.
+create policy "Users read own, published or (moderators) all profiles"
+  on public.profiles for select
+  to authenticated
+  using (
+    id = (select auth.uid())
+    or public.profile_is_public(id)
+    or (select public.is_moderator())
+  );
 
 -- A signed-in user may update only their own profile row.
 create policy "Users update their own profile"
