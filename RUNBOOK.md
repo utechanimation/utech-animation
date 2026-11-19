@@ -71,6 +71,35 @@ cannot rebuild it.
   visitors). Asking for `*` asks for those columns too, and Postgres then refuses
   the whole query with "permission denied".
 
+### Who can read profiles (temporary rule)
+
+Until a final decision in Phase 3/4, a profile row is readable only:
+- by visitors and other students, if the person **owns an active public
+  portfolio** or has an **accepted credit on one** (`profile_is_public()`);
+- by the person themself;
+- by moderators and admins (all profiles).
+
+Pending, rejected, private, unlisted-only or taken-down work does not make a
+profile readable. `get_portfolio_by_slug()` still returns the owner's card for an
+unlisted portfolio opened by its link.
+
+What this means for app code:
+- **Do not check whether a username is taken by reading `profiles`.** Most
+  profiles are invisible, so the check would say "free" and the save would then
+  fail on the unique constraint. Try the update and handle the unique-violation
+  error (23505), or add a server-side check.
+- **Decisions needed in Phase 3:** the credit picker (how to find a classmate
+  who has no published work yet) and how to show the author of a comment whose
+  profile is not readable.
+
+### Comment rate limit
+
+At most 10 comments per user per 10 minutes (brief 4.6), enforced by the
+`comments_rate_limit` trigger. The 11th insert fails with error code **54000** and
+the message "Too many comments. Please wait a few minutes." Show that message to
+the user. Known gaps, to revisit in Phase 3: deleting a comment frees quota, and
+moderators are not exempt.
+
 ### Never
 
 - Never run `supabase db reset` with `--linked` (it wipes the hosted database).

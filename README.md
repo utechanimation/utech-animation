@@ -190,9 +190,12 @@ table is gone. The full schema is in `supabase/migrations/` (see **Database** be
 
 ```
 active → (warning issued) → still active, yellow review card for admin
-active → taken_down → pending_appeal → active (approved)
+active → taken_down → pending_appeal → back to its status before the takedown (approved)
                                      → denied_appeal → [deleted after 1 year]
 ```
+
+Nobody moderates their own work: a moderator or admin cannot approve, decide an
+appeal, restore a comment or close a report about their own portfolio or comment.
 
 ---
 
@@ -221,6 +224,12 @@ pending work, and that students cannot change moderation fields.
 When querying `profiles` or `portfolios` from app code, **list the columns; never
 use `select('*')`**. Some columns are hidden on purpose and `*` would fail with
 "permission denied". See `RUNBOOK.md`.
+
+**Profiles are not all public (temporary rule).** A profile can be read only if the
+person has published work (an active public portfolio, or an accepted credit on
+one), by the person themself, or by a moderator. Comments are limited to 10 per
+user per 10 minutes. See `RUNBOOK.md` → "Who can read profiles" for what this
+means for app code.
 
 ---
 
