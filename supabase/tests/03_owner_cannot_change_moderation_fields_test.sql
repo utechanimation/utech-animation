@@ -10,9 +10,9 @@ insert into auth.users (id, email) values
 
 insert into public.portfolios (id, user_id, slug, title, status) values
   ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111',
-   'taken', 'Taken down', 'taken_down'),
+   'taken-a1b2c3d4e5', 'Taken down', 'taken_down'),
   ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111',
-   'live', 'Live', 'active');
+   'live-a1b2c3d4e5', 'Live', 'active');
 
 insert into public.portfolio_items (id, portfolio_id, type, storage_key, review_state) values
   ('bbbbbbbb-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002', 'image', 'k1', 'pending');
@@ -70,7 +70,7 @@ select throws_ok(
 
 select throws_ok(
   $$ insert into public.portfolios (user_id, slug, title, status)
-     values ('11111111-1111-1111-1111-111111111111', 'sneaky', 'Sneaky', 'active') $$,
+     values ('11111111-1111-1111-1111-111111111111', 'sneaky-a1b2c3d4e5', 'Sneaky', 'active') $$,
   '42501', null, 'owner cannot create a portfolio that is already active');
 
 select throws_ok(

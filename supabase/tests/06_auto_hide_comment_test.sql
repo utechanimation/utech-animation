@@ -10,7 +10,7 @@ insert into auth.users (id, email) values
   ('66666666-6666-6666-6666-666666666666', 'dan@students.utech.edu.jm');
 
 insert into public.portfolios (id, user_id, slug, title, status) values
-  ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'live', 'Live', 'active');
+  ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'live-a1b2c3d4e5', 'Live', 'active');
 insert into public.comments (id, portfolio_id, user_id, content) values
   ('cccccccc-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001',
    '11111111-1111-1111-1111-111111111111', 'A comment');

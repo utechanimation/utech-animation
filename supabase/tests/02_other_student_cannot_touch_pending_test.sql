@@ -10,7 +10,7 @@ insert into auth.users (id, email) values
 
 insert into public.portfolios (id, user_id, slug, title, status) values
   ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111',
-   'alice-pending', 'Alice pending', 'pending_review');
+   'alice-pending-a1b2c3d4e5', 'Alice pending', 'pending_review');
 
 insert into public.portfolio_items (id, portfolio_id, type, storage_key, review_state) values
   ('bbbbbbbb-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001', 'image', 'k1', 'pending');
@@ -58,7 +58,7 @@ select throws_ok(
 
 select throws_ok(
   $$ insert into public.portfolios (user_id, slug, title)
-     values ('11111111-1111-1111-1111-111111111111', 'fake', 'Posing as Alice') $$,
+     values ('11111111-1111-1111-1111-111111111111', 'fake-a1b2c3d4e5', 'Posing as Alice') $$,
   '42501', null,
   'a student cannot create a portfolio in someone else''s name');
 

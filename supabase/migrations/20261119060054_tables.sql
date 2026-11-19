@@ -25,7 +25,9 @@ create table public.profiles (
                  check (username ~ '^[a-z0-9_-]{3,30}$'),
   full_name      text check (char_length(full_name) <= 120),
   bio            text check (char_length(bio) <= 500),
-  avatar_key     text,                       -- storage key, not a full URL
+  -- Storage key, not a full URL. It must sit in the user's own folder
+  -- ("<their id>/..."), so a user cannot point their avatar at someone else's file.
+  avatar_key     text check (avatar_key is null or starts_with(avatar_key, id::text || '/')),
   year_of_study  int  check (year_of_study between 1 and 6),
   role           text not null default 'student'
                  check (role in ('student', 'moderator', 'admin')),
@@ -57,8 +59,14 @@ create table public.staff_invites (
 create table public.portfolios (
   id                 uuid primary key default gen_random_uuid(),
   user_id            uuid not null references public.profiles (id) on delete cascade,
+  -- Format: words from the title + '-' + exactly 10 random lowercase letters/digits,
+  -- for example "night-market-short-k3x9q2m7ab". The random part keeps two
+  -- portfolios with the same title apart and makes unlisted links hard to guess
+  -- (36^10, about 3.6 million million possibilities). The app generates it; the
+  -- database only checks the shape. Max 80 characters keeps links short.
   slug               text not null unique
-                     check (char_length(slug) between 1 and 200),
+                     check (char_length(slug) <= 80
+                            and slug ~ '^[a-z0-9]+(-[a-z0-9]+)*-[a-z0-9]{10}$'),
   title              text not null check (char_length(title) between 1 and 120),
   description        text check (char_length(description) <= 3000),
   cover_item_id      uuid,                   -- foreign key added below (needs portfolio_items)

@@ -17,9 +17,9 @@ update public.profiles set role = 'admin'     where id = '44444444-4444-4444-444
 -- P2: another new portfolio, to be rejected
 -- P3: live portfolio with a pending replacement image
 insert into public.portfolios (id, user_id, slug, title, status, has_pending_media) values
-  ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'p1', 'P1', 'pending_review', false),
-  ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'p2', 'P2', 'pending_review', false),
-  ('aaaaaaaa-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'p3', 'P3', 'active',         true);
+  ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'p1-a1b2c3d4e5', 'P1', 'pending_review', false),
+  ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'p2-a1b2c3d4e5', 'P2', 'pending_review', false),
+  ('aaaaaaaa-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'p3-a1b2c3d4e5', 'P3', 'active',         true);
 
 insert into public.portfolio_items (id, portfolio_id, type, storage_key, review_state, replaces_item_id) values
   ('bbbbbbbb-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001', 'image', 'p1img', 'pending', null),

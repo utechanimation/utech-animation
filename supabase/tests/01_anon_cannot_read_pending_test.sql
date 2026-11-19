@@ -11,10 +11,10 @@ insert into auth.users (id, email) values
   ('11111111-1111-1111-1111-111111111111', 'alice@students.utech.edu.jm');
 
 insert into public.portfolios (id, user_id, slug, title, status, visibility) values
-  ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'pending-work',  'Pending',  'pending_review', 'public'),
-  ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'rejected-work', 'Rejected', 'rejected',       'public'),
-  ('aaaaaaaa-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'live-work',     'Live',     'active',         'public'),
-  ('aaaaaaaa-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'unlisted-work', 'Unlisted', 'active',         'unlisted');
+  ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'pending-work-a1b2c3d4e5',  'Pending',  'pending_review', 'public'),
+  ('aaaaaaaa-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'rejected-work-a1b2c3d4e5', 'Rejected', 'rejected',       'public'),
+  ('aaaaaaaa-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'live-work-a1b2c3d4e5',     'Live',     'active',         'public'),
+  ('aaaaaaaa-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111', 'unlisted-work-a1b2c3d4e5', 'Unlisted', 'active',         'unlisted');
 
 insert into public.portfolio_items (portfolio_id, type, storage_key, review_state) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'image', 'k1', 'pending'),
@@ -35,7 +35,7 @@ select is_empty(
 
 select results_eq(
   $$ select slug from public.portfolios order by slug $$,
-  array['live-work'],
+  array['live-work-a1b2c3d4e5'],
   'anon sees only the active public portfolio (unlisted is not listed)');
 
 select is_empty(
@@ -53,19 +53,19 @@ select is_empty(
   'anon cannot read private storage objects');
 
 select is(
-  public.get_portfolio_by_slug('pending-work'), null,
+  public.get_portfolio_by_slug('pending-work-a1b2c3d4e5'), null,
   'get_portfolio_by_slug returns nothing for pending work');
 
 select is(
-  public.get_portfolio_by_slug('rejected-work'), null,
+  public.get_portfolio_by_slug('rejected-work-a1b2c3d4e5'), null,
   'get_portfolio_by_slug returns nothing for rejected work');
 
 select is(
-  public.get_portfolio_by_slug('unlisted-work')->'portfolio'->>'title', 'Unlisted',
+  public.get_portfolio_by_slug('unlisted-work-a1b2c3d4e5')->'portfolio'->>'title', 'Unlisted',
   'get_portfolio_by_slug opens an unlisted portfolio by its exact slug');
 
 select is(
-  jsonb_array_length(public.get_portfolio_by_slug('live-work')->'items'), 1,
+  jsonb_array_length(public.get_portfolio_by_slug('live-work-a1b2c3d4e5')->'items'), 1,
   'get_portfolio_by_slug returns only live items');
 
 select throws_ok(

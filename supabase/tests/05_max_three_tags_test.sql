@@ -5,7 +5,7 @@ select plan(3);
 insert into auth.users (id, email) values
   ('11111111-1111-1111-1111-111111111111', 'alice@students.utech.edu.jm');
 insert into public.portfolios (id, user_id, slug, title) values
-  ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'tagged', 'Tagged');
+  ('aaaaaaaa-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'tagged-a1b2c3d4e5', 'Tagged');
 
 -- Act as the owner, who is allowed to tag their own portfolio.
 select set_config('request.jwt.claims',
