@@ -70,6 +70,24 @@ end;
 $$;
 
 
+-- Stop if the caller owns the portfolio: nobody approves their own work
+-- (for example a student rep who is also a moderator).
+create or replace function public.require_not_portfolio_owner(p_portfolio_id uuid)
+returns void
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+begin
+  if exists (select 1 from public.portfolios
+             where id = p_portfolio_id and user_id = (select auth.uid())) then
+    raise exception 'You cannot approve your own work' using errcode = '42501';
+  end if;
+end;
+$$;
+
+
 -- =============================================================================
 -- Approval workflow (moderators) - brief 4.3
 -- =============================================================================
@@ -83,6 +101,7 @@ set search_path = ''
 as $$
 begin
   perform public.require_moderator();
+  perform public.require_not_portfolio_owner(p_portfolio_id);
 
   update public.portfolios
      set status = 'active', rejection_reason = null, has_pending_media = false,
@@ -129,7 +148,8 @@ end;
 $$;
 
 -- Approve one pending media item on an already-approved portfolio. If it
--- replaces a live item, the old item is deleted (its file is removed by server code).
+-- replaces a live item, the old item is deleted (its file is removed by server
+-- code). If the old item was the cover, the new item becomes the cover.
 create or replace function public.approve_item(p_item_id uuid)
 returns void
 language plpgsql
@@ -141,15 +161,26 @@ declare
 begin
   perform public.require_moderator();
 
+  select * into v_item from public.portfolio_items where id = p_item_id;
+  if not found then
+    raise exception 'Item not found';
+  end if;
+  perform public.require_not_portfolio_owner(v_item.portfolio_id);
+
   update public.portfolio_items
      set review_state = 'live'
-   where id = p_item_id and review_state = 'pending'
-  returning * into v_item;
+   where id = p_item_id and review_state = 'pending';
   if not found then
     raise exception 'Item is not waiting for review';
   end if;
 
   if v_item.replaces_item_id is not null then
+    -- Move the cover to the new item first; otherwise deleting the old item
+    -- would leave the portfolio with no cover (the foreign key sets it to null).
+    update public.portfolios
+       set cover_item_id = v_item.id
+     where id = v_item.portfolio_id and cover_item_id = v_item.replaces_item_id;
+
     delete from public.portfolio_items where id = v_item.replaces_item_id;
   end if;
 
@@ -312,7 +343,9 @@ end;
 $$;
 
 -- Decide an appeal.
---   approve = true : the portfolio goes back to 'active'.
+--   approve = true : the portfolio goes back to 'active' if it had been approved
+--                    before (reviewed_at is set), otherwise back to the review
+--                    queue ('pending_review'), so unreviewed work never goes live.
 --   approve = false: the portfolio is locked ('denied_appeal') and scheduled for
 --                    deletion in 1 year (the deletion job is a later task).
 -- Admin override: an admin may still approve an appeal that was denied.
@@ -341,7 +374,9 @@ begin
     update public.takedowns
        set appeal_status = 'approved', resolved_at = now(), scheduled_wipe_at = null
      where id = p_takedown_id;
-    update public.portfolios set status = 'active' where id = v_takedown.portfolio_id;
+    update public.portfolios
+       set status = case when reviewed_at is null then 'pending_review' else 'active' end
+     where id = v_takedown.portfolio_id;
   else
     update public.takedowns
        set appeal_status = 'denied', appeal_denied_at = now(),
@@ -503,6 +538,7 @@ $$;
 revoke execute on function public.write_audit(text, text, uuid, jsonb)  from public, anon, authenticated;
 revoke execute on function public.require_moderator()                   from public, anon, authenticated;
 revoke execute on function public.require_portfolio_owner(uuid)         from public, anon, authenticated;
+revoke execute on function public.require_not_portfolio_owner(uuid)     from public, anon, authenticated;
 
 -- App functions: signed-in users only. Each function checks the role itself.
 revoke execute on function
