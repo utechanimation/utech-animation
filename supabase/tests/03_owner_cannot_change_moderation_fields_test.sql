@@ -3,7 +3,7 @@
 -- They CAN still edit their own text fields - but not while the portfolio is
 -- taken down.
 begin;
-select plan(23);
+select plan(26);
 
 -- ---------- Fixtures ----------
 insert into auth.users (id, email) values
@@ -16,7 +16,8 @@ insert into public.portfolios (id, user_id, slug, title, status) values
    'live-a1b2c3d4e5', 'Live', 'active');
 
 insert into public.portfolio_items (id, portfolio_id, type, storage_key, review_state) values
-  ('bbbbbbbb-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002', 'image', 'k1', 'pending');
+  ('bbbbbbbb-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002', 'image', 'k1', 'pending'),
+  ('bbbbbbbb-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001', 'image', 'k2', 'live');
 
 insert into public.comments (id, portfolio_id, user_id, content, hidden) values
   ('cccccccc-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000002',
@@ -107,6 +108,12 @@ select lives_ok(
      values ('aaaaaaaa-0000-0000-0000-000000000002', 'Sam (sound design)', 'Sound') $$,
   'owner CAN credit someone on their own live portfolio');
 
+select results_eq(
+  $$ update public.portfolio_items set position = 5
+     where id = 'bbbbbbbb-0000-0000-0000-000000000001' returning position $$,
+  array[5],
+  'owner CAN reorder items on their own live portfolio');
+
 -- Not allowed: any owner edit while the portfolio is taken down (review item 4).
 select is_empty(
   $$ update public.portfolios set title = 'Swapped'
@@ -130,6 +137,11 @@ select throws_ok(
   '42501', null,
   'owner cannot change credits on a taken-down portfolio');
 
+select is_empty(
+  $$ update public.portfolio_items set position = 9
+     where id = 'bbbbbbbb-0000-0000-0000-000000000002' returning id $$,
+  'owner cannot reorder items on a taken-down portfolio');
+
 reset role;
 select is(
   (select status from public.portfolios where id = 'aaaaaaaa-0000-0000-0000-000000000001'),
@@ -140,6 +152,11 @@ select is(
   (select title from public.portfolios where id = 'aaaaaaaa-0000-0000-0000-000000000001'),
   'Taken down',
   'the taken-down portfolio''s title is unchanged');
+
+select isnt(
+  (select position from public.portfolio_items where id = 'bbbbbbbb-0000-0000-0000-000000000002'),
+  9,
+  'the taken-down portfolio''s item order is unchanged');
 
 select * from finish();
 rollback;

@@ -52,7 +52,8 @@ grant  execute on function public.portfolio_is_open(uuid) to authenticated;
 
 
 -- -----------------------------------------------------------------------------
--- Helper: may the current user change this portfolio's tags and credits?
+-- Helper: may the current user change this portfolio's tags, credits and
+-- item order?
 -- Yes only if they own it AND it is in a normal state ('pending_review',
 -- 'active' or 'rejected'), not while it is taken down or under appeal.
 -- The same status list is used by the owner policies on portfolios below.
@@ -192,8 +193,8 @@ create policy "Users read public, own, or (moderators) all portfolios"
 -- 'pending_review', 'active' or 'rejected'. While it is taken down, under
 -- appeal, or locked after a denied appeal, the owner cannot edit or delete it,
 -- so the work a moderator judged cannot be swapped or erased.
--- The same list is in owner_can_edit_portfolio() above (used by the tag and
--- credit policies). Change both together.
+-- The same list is in owner_can_edit_portfolio() above (used by the tag,
+-- credit and item-order policies). Change both together.
 
 -- A user may create a portfolio only for themselves. The status column is not
 -- granted, so every new portfolio starts as 'pending_review' (the column default).
@@ -266,18 +267,13 @@ create policy "Users read live public items, own items, or (moderators) all"
     or (select public.is_moderator())
   );
 
--- Owners may change the order (position) of items in their own portfolios.
+-- Owners may change the order (position) of items in their own portfolios,
+-- but not while it is taken down, under appeal or denied.
 create policy "Owners reorder their own items"
   on public.portfolio_items for update
   to authenticated
-  using (exists (
-    select 1 from public.portfolios p
-    where p.id = portfolio_id and p.user_id = (select auth.uid())
-  ))
-  with check (exists (
-    select 1 from public.portfolios p
-    where p.id = portfolio_id and p.user_id = (select auth.uid())
-  ));
+  using (public.owner_can_edit_portfolio(portfolio_id))
+  with check (public.owner_can_edit_portfolio(portfolio_id));
 
 
 -- =============================================================================
