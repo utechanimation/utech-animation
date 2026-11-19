@@ -1,8 +1,8 @@
 -- Test (review follow-up):
 --   1. A moderator cannot approve their own portfolio or their own media (42501).
 --   2. When an approved item replaces the cover, the new item becomes the cover.
---   3. An approved appeal restores the portfolio to 'active' if it had been
---      reviewed before, otherwise to 'pending_review'.
+--   3. An approved appeal restores the status the portfolio had before the
+--      takedown (takedowns.status_before). More cases in 10_appeal_rules_test.sql.
 begin;
 select plan(18);
 
@@ -44,12 +44,12 @@ select set_config('request.jwt.claims', '{"sub":"33333333-3333-3333-3333-3333333
 
 select throws_ok(
   $$ select public.approve_portfolio('aaaaaaaa-0000-0000-0000-000000000001') $$,
-  '42501', 'You cannot approve your own work',
+  '42501', 'You cannot moderate your own work',
   'a moderator cannot approve their own portfolio');
 
 select throws_ok(
   $$ select public.approve_item('bbbbbbbb-0000-0000-0000-000000000021') $$,
-  '42501', 'You cannot approve your own work',
+  '42501', 'You cannot moderate your own work',
   'a moderator cannot approve their own media');
 
 select is(
@@ -94,30 +94,30 @@ select is(
   'replacing a non-cover item leaves the cover alone');
 
 -- =====================================================================
--- 3. An approved appeal restores the right status
+-- 3. An approved appeal restores the status from before the takedown
 -- =====================================================================
-select lives_ok($$ select public.take_down('aaaaaaaa-0000-0000-0000-000000000004', 'Check music rights') $$, 'take down a reviewed portfolio');
-select lives_ok($$ select public.take_down('aaaaaaaa-0000-0000-0000-000000000005', 'Check music rights') $$, 'take down a never-reviewed portfolio');
+select lives_ok($$ select public.take_down('aaaaaaaa-0000-0000-0000-000000000004', 'Check music rights') $$, 'take down an active portfolio');
+select lives_ok($$ select public.take_down('aaaaaaaa-0000-0000-0000-000000000005', 'Check music rights') $$, 'take down a pending_review portfolio');
 select set_config('test.td_was_live',
   (select id::text from public.takedowns where portfolio_id = 'aaaaaaaa-0000-0000-0000-000000000004'), true);
 select set_config('test.td_never_live',
   (select id::text from public.takedowns where portfolio_id = 'aaaaaaaa-0000-0000-0000-000000000005'), true);
 
 select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', true);
-select lives_ok($$ select public.submit_appeal(current_setting('test.td_was_live')::uuid,   'Licensed') $$, 'owner appeals (reviewed)');
-select lives_ok($$ select public.submit_appeal(current_setting('test.td_never_live')::uuid, 'Licensed') $$, 'owner appeals (never reviewed)');
+select lives_ok($$ select public.submit_appeal(current_setting('test.td_was_live')::uuid,   'Licensed') $$, 'owner appeals (was active)');
+select lives_ok($$ select public.submit_appeal(current_setting('test.td_never_live')::uuid, 'Licensed') $$, 'owner appeals (was pending_review)');
 
 select set_config('request.jwt.claims', '{"sub":"33333333-3333-3333-3333-333333333333","role":"authenticated"}', true);
-select lives_ok($$ select public.decide_appeal(current_setting('test.td_was_live')::uuid,   true) $$, 'appeal approved (reviewed)');
-select lives_ok($$ select public.decide_appeal(current_setting('test.td_never_live')::uuid, true) $$, 'appeal approved (never reviewed)');
+select lives_ok($$ select public.decide_appeal(current_setting('test.td_was_live')::uuid,   true) $$, 'appeal approved (was active)');
+select lives_ok($$ select public.decide_appeal(current_setting('test.td_never_live')::uuid, true) $$, 'appeal approved (was pending_review)');
 
 select is(
   (select status from public.portfolios where id = 'aaaaaaaa-0000-0000-0000-000000000004'),
-  'active', 'a portfolio that was reviewed before goes back to active');
+  'active', 'active -> takedown -> appeal approved -> active');
 
 select is(
   (select status from public.portfolios where id = 'aaaaaaaa-0000-0000-0000-000000000005'),
-  'pending_review', 'a portfolio never reviewed goes back to the review queue, not live');
+  'pending_review', 'pending_review -> takedown -> appeal approved -> pending_review (not live)');
 
 select * from finish();
 rollback;

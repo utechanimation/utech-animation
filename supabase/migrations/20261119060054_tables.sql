@@ -238,6 +238,10 @@ create table public.takedowns (
   id                 uuid primary key default gen_random_uuid(),
   portfolio_id       uuid not null references public.portfolios (id) on delete cascade,
   reason             text not null check (char_length(reason) between 1 and 1000),
+  -- The portfolio's status just before the takedown. An approved appeal puts
+  -- it back exactly as it was (so unreviewed work never goes live).
+  status_before      text not null
+                     check (status_before in ('pending_review', 'active', 'rejected')),
   appeal_message     text check (char_length(appeal_message) <= 2000),
   appeal_status      text not null default 'none'
                      check (appeal_status in ('none', 'pending', 'approved', 'denied')),

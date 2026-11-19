@@ -70,8 +70,9 @@ end;
 $$;
 
 
--- Stop if the caller owns the portfolio: nobody approves their own work
--- (for example a student rep who is also a moderator).
+-- Stop if the caller owns the portfolio: nobody moderates their own work
+-- (for example a student rep who is also a moderator). Used by approvals and
+-- appeal decisions.
 create or replace function public.require_not_portfolio_owner(p_portfolio_id uuid)
 returns void
 language plpgsql
@@ -82,7 +83,7 @@ as $$
 begin
   if exists (select 1 from public.portfolios
              where id = p_portfolio_id and user_id = (select auth.uid())) then
-    raise exception 'You cannot approve your own work' using errcode = '42501';
+    raise exception 'You cannot moderate your own work' using errcode = '42501';
   end if;
 end;
 $$;
@@ -280,7 +281,8 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_takedown_id uuid;
+  v_takedown_id   uuid;
+  v_status_before text;
 begin
   perform public.require_moderator();
 
@@ -288,20 +290,26 @@ begin
     raise exception 'A reason is required';
   end if;
 
-  update public.portfolios
-     set status = 'taken_down'
+  -- Remember the status before changing it (locks the row so it cannot change
+  -- in between). An approved appeal restores exactly this status.
+  select status into v_status_before
+    from public.portfolios
    where id = p_portfolio_id
-     and status not in ('taken_down', 'pending_appeal', 'denied_appeal');
+     and status in ('pending_review', 'active', 'rejected')
+     for update;
   if not found then
     raise exception 'Portfolio not found or already taken down';
   end if;
 
-  insert into public.takedowns (portfolio_id, reason, created_by)
-  values (p_portfolio_id, btrim(p_reason), (select auth.uid()))
+  update public.portfolios set status = 'taken_down' where id = p_portfolio_id;
+
+  insert into public.takedowns (portfolio_id, reason, status_before, created_by)
+  values (p_portfolio_id, btrim(p_reason), v_status_before, (select auth.uid()))
   returning id into v_takedown_id;
 
   perform public.write_audit('take_down', 'portfolio', p_portfolio_id,
-    jsonb_build_object('takedown_id', v_takedown_id, 'reason', btrim(p_reason)));
+    jsonb_build_object('takedown_id', v_takedown_id, 'reason', btrim(p_reason),
+                       'status_before', v_status_before));
   return v_takedown_id;
 end;
 $$;
@@ -342,10 +350,10 @@ begin
 end;
 $$;
 
--- Decide an appeal.
---   approve = true : the portfolio goes back to 'active' if it had been approved
---                    before (reviewed_at is set), otherwise back to the review
---                    queue ('pending_review'), so unreviewed work never goes live.
+-- Decide an appeal. A moderator cannot decide an appeal on their own work.
+--   approve = true : the portfolio goes back to the status it had just before
+--                    the takedown (takedowns.status_before): 'active',
+--                    'pending_review' or 'rejected'. Unreviewed work never goes live.
 --   approve = false: the portfolio is locked ('denied_appeal') and scheduled for
 --                    deletion in 1 year (the deletion job is a later task).
 -- Admin override: an admin may still approve an appeal that was denied.
@@ -364,6 +372,7 @@ begin
   if not found then
     raise exception 'Takedown not found';
   end if;
+  perform public.require_not_portfolio_owner(v_takedown.portfolio_id);
 
   if not (v_takedown.appeal_status = 'pending'
           or (v_takedown.appeal_status = 'denied' and p_approve and public.is_admin())) then
@@ -375,7 +384,7 @@ begin
        set appeal_status = 'approved', resolved_at = now(), scheduled_wipe_at = null
      where id = p_takedown_id;
     update public.portfolios
-       set status = case when reviewed_at is null then 'pending_review' else 'active' end
+       set status = v_takedown.status_before
      where id = v_takedown.portfolio_id;
   else
     update public.takedowns
@@ -399,6 +408,7 @@ $$;
 -- =============================================================================
 
 -- Close a report: 'reviewed', 'actioned' or 'dismissed'.
+-- A moderator cannot close a report about their own portfolio or comment.
 create or replace function public.resolve_report(p_report_id uuid, p_status text)
 returns void
 language plpgsql
@@ -407,6 +417,17 @@ set search_path = ''
 as $$
 begin
   perform public.require_moderator();
+
+  if exists (
+    select 1
+      from public.reports r
+      left join public.portfolios p on p.id = r.portfolio_id
+      left join public.comments   c on c.id = r.comment_id
+     where r.id = p_report_id
+       and (select auth.uid()) in (p.user_id, c.user_id)
+  ) then
+    raise exception 'You cannot moderate your own work' using errcode = '42501';
+  end if;
 
   if p_status not in ('reviewed', 'actioned', 'dismissed') then
     raise exception 'Status must be reviewed, actioned or dismissed';
@@ -423,7 +444,8 @@ end;
 $$;
 
 -- Show a hidden comment again. Its pending reports are dismissed, otherwise the
--- next report would hide it again straight away.
+-- next report would hide it again straight away. A moderator cannot restore
+-- their own comment.
 create or replace function public.restore_comment(p_comment_id uuid)
 returns void
 language plpgsql
@@ -432,6 +454,11 @@ set search_path = ''
 as $$
 begin
   perform public.require_moderator();
+
+  if exists (select 1 from public.comments
+             where id = p_comment_id and user_id = (select auth.uid())) then
+    raise exception 'You cannot moderate your own work' using errcode = '42501';
+  end if;
 
   update public.comments set hidden = false where id = p_comment_id;
   if not found then
