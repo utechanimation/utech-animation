@@ -218,6 +218,10 @@ supabase stop       # stop it when you are done
 The tests prove, among other things, that visitors and other students cannot read
 pending work, and that students cannot change moderation fields.
 
+When querying `profiles` or `portfolios` from app code, **list the columns; never
+use `select('*')`**. Some columns are hidden on purpose and `*` would fail with
+"permission denied". See `RUNBOOK.md`.
+
 ---
 
 ## Getting Started

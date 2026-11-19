@@ -58,6 +58,18 @@ cannot rebuild it.
   `public.hook_before_user_created`. (Locally it is already switched on in
   `supabase/config.toml`.)
 - **First admin.** See "Making Someone an Admin" in `README.md`.
+- **Turn off email sign-up.** Once "Sign in with Microsoft" works on the hosted
+  project, go to **Authentication → Sign In / Providers → Email** and disable the
+  Email provider, so nobody can sign up with an email and password. (The demo
+  sign-in form needs it until then.)
+
+### Rules for app code that reads the database
+
+- **List columns explicitly on `profiles` and `portfolios`. Never `select('*')`.**
+  Some columns are deliberately not granted (`profiles.storage_used` for everyone;
+  `portfolios.reviewed_by`, `has_pending_media` and `rejection_reason` for
+  visitors). Asking for `*` asks for those columns too, and Postgres then refuses
+  the whole query with "permission denied".
 
 ### Never
 
