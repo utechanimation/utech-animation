@@ -3,7 +3,7 @@
 -- Run with: supabase test db   (everything is rolled back at the end)
 -- (The pgtap extension is already installed in the local Supabase database.)
 begin;
-select plan(11);
+select plan(16);
 
 -- ---------- Fixtures (created as the database owner, bypassing RLS) ----------
 -- Inserting into auth.users runs the sign-up trigger, which creates the profile.
@@ -77,6 +77,36 @@ select throws_ok(
   $$ select * from public.audit_log $$,
   '42501', null,
   'anon cannot read the audit log');
+
+-- Moderation details on portfolios are hidden from visitors (review item 7).
+select throws_ok(
+  $$ select reviewed_by from public.portfolios $$,
+  '42501', null,
+  'anon cannot select portfolios.reviewed_by');
+
+select throws_ok(
+  $$ select rejection_reason from public.portfolios $$,
+  '42501', null,
+  'anon cannot select portfolios.rejection_reason');
+
+select throws_ok(
+  $$ select has_pending_media from public.portfolios $$,
+  '42501', null,
+  'anon cannot select portfolios.has_pending_media');
+
+select lives_ok(
+  $$ select id, user_id, slug, title, description, cover_item_id, visibility, status,
+            reviewed_at, upload_year, created_at, updated_at
+     from public.portfolios $$,
+  'anon can still select the public portfolio columns');
+
+-- Signed-in owners keep every column of their own work (e.g. why it was rejected).
+select set_config('request.jwt.claims',
+  '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', true);
+set local role authenticated;
+select lives_ok(
+  $$ select reviewed_by, rejection_reason, has_pending_media from public.portfolios $$,
+  'a signed-in owner can still read the moderation columns of their own work');
 
 select * from finish();
 rollback;

@@ -1,8 +1,9 @@
 -- Test: a student cannot set status, review_state, role, storage_used or hidden
 -- on their own rows, and cannot write moderation tables - directly or via update.
--- They CAN still edit their own text fields.
+-- They CAN still edit their own text fields - but not while the portfolio is
+-- taken down.
 begin;
-select plan(16);
+select plan(23);
 
 -- ---------- Fixtures ----------
 insert into auth.users (id, email) values
@@ -96,11 +97,49 @@ select results_eq(
   array['New title'],
   'owner CAN edit title and visibility of their own portfolio');
 
+select lives_ok(
+  $$ insert into public.portfolio_tags (portfolio_id, tag_id)
+     select 'aaaaaaaa-0000-0000-0000-000000000002', id from public.tags where name = 'Illustration' $$,
+  'owner CAN tag their own live portfolio');
+
+select lives_ok(
+  $$ insert into public.portfolio_credits (portfolio_id, external_name, role)
+     values ('aaaaaaaa-0000-0000-0000-000000000002', 'Sam (sound design)', 'Sound') $$,
+  'owner CAN credit someone on their own live portfolio');
+
+-- Not allowed: any owner edit while the portfolio is taken down (review item 4).
+select is_empty(
+  $$ update public.portfolios set title = 'Swapped'
+     where id = 'aaaaaaaa-0000-0000-0000-000000000001' returning id $$,
+  'owner cannot edit a taken-down portfolio');
+
+select is_empty(
+  $$ delete from public.portfolios
+     where id = 'aaaaaaaa-0000-0000-0000-000000000001' returning id $$,
+  'owner cannot delete a taken-down portfolio');
+
+select throws_ok(
+  $$ insert into public.portfolio_tags (portfolio_id, tag_id)
+     select 'aaaaaaaa-0000-0000-0000-000000000001', id from public.tags where name = 'Illustration' $$,
+  '42501', null,
+  'owner cannot change tags on a taken-down portfolio');
+
+select throws_ok(
+  $$ insert into public.portfolio_credits (portfolio_id, external_name, role)
+     values ('aaaaaaaa-0000-0000-0000-000000000001', 'Someone', 'Art') $$,
+  '42501', null,
+  'owner cannot change credits on a taken-down portfolio');
+
 reset role;
 select is(
   (select status from public.portfolios where id = 'aaaaaaaa-0000-0000-0000-000000000001'),
   'taken_down',
   'the taken-down portfolio is still taken down');
+
+select is(
+  (select title from public.portfolios where id = 'aaaaaaaa-0000-0000-0000-000000000001'),
+  'Taken down',
+  'the taken-down portfolio''s title is unchanged');
 
 select * from finish();
 rollback;
