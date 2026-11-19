@@ -179,15 +179,57 @@ To finish the switch (part of Phase 1 in the project brief):
 | `reports` | User-submitted reports (inappropriate content / copyright) |
 | `takedowns` | Admin takedown records with appeal tracking |
 | `warnings` | Timed admin warnings with counter statement support |
-| `admin_roles` | Admin user registry |
+| `portfolio_credits` | Collaborators on group projects (invited / accepted / declined) |
+| `staff_invites` | Lecturer emails allowed to sign up, with their role |
+| `audit_log` | Every moderation decision (who, what, when) |
+
+Roles (`student`, `moderator`, `admin`) live in `profiles.role`; the demo's `admin_roles`
+table is gone. The full schema is in `supabase/migrations/` (see **Database** below).
 
 ### Portfolio Status Flow
 
 ```
 active → (warning issued) → still active, yellow review card for admin
-active → taken_down → pending_appeal → active (approved)
+active → taken_down → pending_appeal → back to its status before the takedown (approved)
                                      → denied_appeal → [deleted after 1 year]
 ```
+
+Nobody moderates their own work: a moderator or admin cannot approve, decide an
+appeal, restore a comment or close a report about their own portfolio or comment.
+
+---
+
+## Database
+
+Everything in the database (tables, Row Level Security policies, functions, triggers,
+the fixed tags and the storage buckets) is in `supabase/migrations/`, one concern per file.
+Never change the database only in the Supabase dashboard; add a migration instead
+(see `RUNBOOK.md` → "Database changes").
+
+You need the [Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started)
+and Docker Desktop (running).
+
+```bash
+supabase start      # start a local Supabase (database, auth, storage) in Docker
+supabase db reset   # rebuild the local database from scratch using every migration
+supabase test db    # run the SQL tests in supabase/tests/ (pgTAP)
+supabase stop       # stop it when you are done
+```
+
+`supabase status` shows the local URLs and keys. They are for your machine only.
+
+The tests prove, among other things, that visitors and other students cannot read
+pending work, and that students cannot change moderation fields.
+
+When querying `profiles` or `portfolios` from app code, **list the columns; never
+use `select('*')`**. Some columns are hidden on purpose and `*` would fail with
+"permission denied". See `RUNBOOK.md`.
+
+**Profiles are not all public (temporary rule).** A profile can be read only if the
+person has published work (an active public portfolio, or an accepted credit on
+one), by the person themself, or by a moderator. Comments are limited to 10 per
+user per 10 minutes. See `RUNBOOK.md` → "Who can read profiles" for what this
+means for app code.
 
 ---
 
@@ -231,15 +273,18 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 
 ## Making Someone an Admin
 
-In Supabase SQL Editor:
+The **first** admin is set once in the Supabase SQL Editor:
 
 ```sql
 -- Get the user's ID first
 select id, email from auth.users;
 
--- Then insert into admin_roles
-insert into admin_roles (user_id) values ('paste-user-id-here');
+-- Then give them the admin role
+update profiles set role = 'admin' where id = 'paste-user-id-here';
 ```
+
+After that, an admin changes roles from the app with the `set_user_role` function,
+which is recorded in `audit_log`. See `RUNBOOK.md`.
 
 ---
 
