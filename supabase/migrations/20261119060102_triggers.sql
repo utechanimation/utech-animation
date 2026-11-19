@@ -7,6 +7,7 @@
 --   3. portfolios_set_updated_at  - keep portfolios.updated_at current
 --   4. portfolio_credits_set_status - new credits start as 'invited' (students on the
 --                                   platform) or 'accepted' (external names)
+--   5. comments_rate_limit        - at most 10 comments per user per 10 minutes (brief 4.6)
 --
 -- Trigger functions that must see or change rows the caller cannot (other
 -- users' reports, comments.hidden) are "security definer" with an empty
@@ -112,8 +113,45 @@ create trigger portfolio_credits_set_status
   for each row execute function public.set_new_credit_status();
 
 
+-- -----------------------------------------------------------------------------
+-- 5. Comment rate limit: at most 10 comments per user per 10 minutes (brief 4.6)
+-- -----------------------------------------------------------------------------
+-- security definer so it counts ALL of the user's comments, including hidden
+-- ones (with the caller's rights, RLS would hide those from the count).
+-- Error code 54000 (program_limit_exceeded) lets the app show the message.
+--
+-- Known gaps, to revisit in Phase 3:
+--   * deleting a comment frees quota (deleted comments are not counted);
+--   * moderators are not exempt.
+create or replace function public.enforce_comment_rate_limit()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  -- One user's inserts wait for each other, so two at the same moment cannot
+  -- both pass the count. The lock is released at the end of the transaction.
+  perform pg_advisory_xact_lock(hashtext(new.user_id::text));
+
+  if (select count(*) from public.comments
+      where user_id = new.user_id
+        and created_at > now() - interval '10 minutes') >= 10 then
+    raise exception 'Too many comments. Please wait a few minutes.'
+      using errcode = '54000';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger comments_rate_limit
+  before insert on public.comments
+  for each row execute function public.enforce_comment_rate_limit();
+
+
 -- Trigger functions are only run by their triggers, never called directly.
 revoke execute on function public.enforce_max_three_tags()     from public, anon, authenticated;
 revoke execute on function public.auto_hide_reported_comment() from public, anon, authenticated;
 revoke execute on function public.set_updated_at()             from public, anon, authenticated;
 revoke execute on function public.set_new_credit_status()      from public, anon, authenticated;
+revoke execute on function public.enforce_comment_rate_limit() from public, anon, authenticated;
