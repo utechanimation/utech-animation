@@ -52,6 +52,31 @@ grant  execute on function public.portfolio_is_open(uuid) to authenticated;
 
 
 -- -----------------------------------------------------------------------------
+-- Helper: may the current user change this portfolio's tags and credits?
+-- Yes only if they own it AND it is in a normal state ('pending_review',
+-- 'active' or 'rejected'), not while it is taken down or under appeal.
+-- The same status list is used by the owner policies on portfolios below.
+-- -----------------------------------------------------------------------------
+create or replace function public.owner_can_edit_portfolio(p_portfolio_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.portfolios
+    where id = p_portfolio_id
+      and user_id = (select auth.uid())
+      and status in ('pending_review', 'active', 'rejected')
+  );
+$$;
+
+revoke execute on function public.owner_can_edit_portfolio(uuid) from public, anon;
+grant  execute on function public.owner_can_edit_portfolio(uuid) to authenticated;
+
+
+-- -----------------------------------------------------------------------------
 -- Start from zero: take away Supabase's default "everything" grants.
 -- -----------------------------------------------------------------------------
 revoke all on table
@@ -126,7 +151,14 @@ create policy "Admins remove staff invites"
 -- =============================================================================
 -- portfolios
 -- =============================================================================
-grant select on public.portfolios to anon, authenticated;
+-- Visitors get every column EXCEPT the moderation details reviewed_by,
+-- has_pending_media and rejection_reason. Signed-in users get all columns
+-- (owners need rejection_reason); the row policies below still apply.
+-- Because of this, app code must list columns, not use select('*') (see RUNBOOK).
+grant select (id, user_id, slug, title, description, cover_item_id, visibility, status,
+              reviewed_at, upload_year, created_at, updated_at)
+  on public.portfolios to anon;
+grant select on public.portfolios to authenticated;
 
 -- Students create portfolios. They cannot choose status, review fields or the
 -- cover (cover changes are media changes and go through review).
@@ -156,28 +188,43 @@ create policy "Users read public, own, or (moderators) all portfolios"
     or (select public.is_moderator())
   );
 
+-- OWNER WRITES are allowed only while the portfolio is in a normal state:
+-- 'pending_review', 'active' or 'rejected'. While it is taken down, under
+-- appeal, or locked after a denied appeal, the owner cannot edit or delete it,
+-- so the work a moderator judged cannot be swapped or erased.
+-- The same list is in owner_can_edit_portfolio() above (used by the tag and
+-- credit policies). Change both together.
+
 -- A user may create a portfolio only for themselves. The status column is not
 -- granted, so every new portfolio starts as 'pending_review' (the column default).
 create policy "Users create their own portfolios"
   on public.portfolios for insert
   to authenticated
-  with check (user_id = (select auth.uid()));
+  with check (
+    user_id = (select auth.uid())
+    and status in ('pending_review', 'active', 'rejected')
+  );
 
 -- Owners may edit their own portfolio's text (columns limited by the grant above).
 create policy "Owners update their own portfolios"
   on public.portfolios for update
   to authenticated
-  using (user_id = (select auth.uid()))
-  with check (user_id = (select auth.uid()));
+  using (
+    user_id = (select auth.uid())
+    and status in ('pending_review', 'active', 'rejected')
+  )
+  with check (
+    user_id = (select auth.uid())
+    and status in ('pending_review', 'active', 'rejected')
+  );
 
--- Owners may delete their own portfolio, but not while it is under a takedown,
--- so a student cannot erase the moderation record. (Stored files are removed by server code.)
-create policy "Owners delete their own portfolios unless taken down"
+-- Owners may delete their own portfolio. (Stored files are removed by server code.)
+create policy "Owners delete their own portfolios"
   on public.portfolios for delete
   to authenticated
   using (
     user_id = (select auth.uid())
-    and status not in ('taken_down', 'pending_appeal', 'denied_appeal')
+    and status in ('pending_review', 'active', 'rejected')
   );
 
 
@@ -276,22 +323,17 @@ create policy "Tag links follow portfolio visibility"
   to anon, authenticated
   using (exists (select 1 from public.portfolios p where p.id = portfolio_id));
 
--- Owners add and remove tags on their own portfolios (a text edit, goes live at once).
+-- Owners add and remove tags on their own portfolios (a text edit, goes live at
+-- once), but not while the portfolio is taken down or under appeal.
 create policy "Owners add tags to their own portfolios"
   on public.portfolio_tags for insert
   to authenticated
-  with check (exists (
-    select 1 from public.portfolios p
-    where p.id = portfolio_id and p.user_id = (select auth.uid())
-  ));
+  with check (public.owner_can_edit_portfolio(portfolio_id));
 
 create policy "Owners remove tags from their own portfolios"
   on public.portfolio_tags for delete
   to authenticated
-  using (exists (
-    select 1 from public.portfolios p
-    where p.id = portfolio_id and p.user_id = (select auth.uid())
-  ));
+  using (public.owner_can_edit_portfolio(portfolio_id));
 
 
 -- =============================================================================
@@ -332,34 +374,23 @@ create policy "Users read accepted, own, or (moderators) all credits"
     or (select public.is_moderator())
   );
 
--- Owners add, edit and remove credits on their own portfolios.
+-- Owners add, edit and remove credits on their own portfolios, but not while
+-- the portfolio is taken down or under appeal.
 create policy "Owners add credits to their own portfolios"
   on public.portfolio_credits for insert
   to authenticated
-  with check (exists (
-    select 1 from public.portfolios p
-    where p.id = portfolio_id and p.user_id = (select auth.uid())
-  ));
+  with check (public.owner_can_edit_portfolio(portfolio_id));
 
 create policy "Owners edit credits on their own portfolios"
   on public.portfolio_credits for update
   to authenticated
-  using (exists (
-    select 1 from public.portfolios p
-    where p.id = portfolio_id and p.user_id = (select auth.uid())
-  ))
-  with check (exists (
-    select 1 from public.portfolios p
-    where p.id = portfolio_id and p.user_id = (select auth.uid())
-  ));
+  using (public.owner_can_edit_portfolio(portfolio_id))
+  with check (public.owner_can_edit_portfolio(portfolio_id));
 
 create policy "Owners remove credits from their own portfolios"
   on public.portfolio_credits for delete
   to authenticated
-  using (exists (
-    select 1 from public.portfolios p
-    where p.id = portfolio_id and p.user_id = (select auth.uid())
-  ));
+  using (public.owner_can_edit_portfolio(portfolio_id));
 
 
 -- =============================================================================
